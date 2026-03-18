@@ -39,6 +39,14 @@ def load_env_file(env_path=".env"):
 
 load_env_file()
 
+
+def env_bool(name, default=False):
+    """Lit un booléen depuis l'environnement (true/false, 1/0, yes/no)."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 BASE_URL = os.getenv("MEWS_BASE_URL", "https://api.mews.com/api/connector/v1")
 
 # Credentials API MEWS (doivent venir des variables d'environnement)
@@ -51,6 +59,8 @@ HEADERS = {"Content-Type": "application/json"}
 MODBUS_HOST = "0.0.0.0"    # 0.0.0.0 = écoute sur toutes les interfaces
 MODBUS_PORT = int(os.getenv("MODBUS_PORT", "5020"))
 POLLING_INTERVAL = int(os.getenv("POLLING_INTERVAL", "300"))
+MOCK_MODE = env_bool("MOCK_MODE", False)
+MOCK_ROOM_COUNT = int(os.getenv("MOCK_ROOM_COUNT", "10"))
 
 MAPPING_FILE = "rooms_mapping.json"
 
@@ -71,6 +81,9 @@ class MewsApiError(Exception):
 
 def validate_config():
     """Valide la configuration avant démarrage."""
+    if MOCK_MODE:
+        return
+
     missing = []
     if not CLIENT_TOKEN:
         missing.append("MEWS_CLIENT_TOKEN")
@@ -233,6 +246,36 @@ def analyse_occupation(rooms, reservations):
     return resultats
 
 
+def generate_mock_rooms(count):
+    """Génère des chambres fictives pour les tests Modbus."""
+    rooms = []
+    for i in range(1, max(1, count) + 1):
+        rooms.append({
+            "Id": f"mock-room-{i:03d}",
+            "Name": f"Mock Room {100 + i}"
+        })
+    return rooms
+
+
+def generate_mock_occupation(rooms, tick):
+    """Génère une occupation simulée qui varie à chaque cycle."""
+    resultats = {}
+    for idx, room in enumerate(rooms):
+        room_id = room.get("Id")
+        room_name = room.get("Name", "N/A")
+        room_number = ''.join(filter(str.isdigit, room_name)) or "0"
+
+        # Fait alterner les états pour simuler des changements.
+        occupied = ((idx + tick) % 3) == 0
+
+        resultats[room_id] = {
+            "occupied": occupied,
+            "room_name": room_name,
+            "room_number": room_number
+        }
+    return resultats
+
+
 # ============================================================
 # SERVEUR MODBUS
 # ============================================================
@@ -242,9 +285,15 @@ class MewsRoomsModbus:
     def __init__(self):
         self.running = False
         self.room_names = {}  # Pour stocker les noms {room_id: name}
+        self.mock_mode = MOCK_MODE
+        self.mock_tick = 0
         
         # Chargement initial
-        rooms = fetch_rooms()
+        if self.mock_mode:
+            rooms = generate_mock_rooms(MOCK_ROOM_COUNT)
+            log.warning("⚠️ MODE MOCK ACTIF: aucune connexion API MEWS, données simulées.")
+        else:
+            rooms = fetch_rooms()
 
         if not rooms:
             raise RuntimeError(
@@ -280,21 +329,28 @@ class MewsRoomsModbus:
 
     def update_registers(self):
         """Met à jour les registres Modbus avec les données actuelles"""
-        try:
-            rooms = fetch_rooms()
-            reservations = fetch_reservations()
-            occupation = analyse_occupation(rooms, reservations)
+        if self.mock_mode:
+            rooms = generate_mock_rooms(MOCK_ROOM_COUNT)
+            occupation = generate_mock_occupation(rooms, self.mock_tick)
             api_error = 0
-            
-            log.info(f"Mise à jour: {len(rooms)} chambres, {len(reservations)} réservations")
-        except MewsApiError as e:
-            log.error(f"Echec API MEWS pendant update: {e}")
-            occupation = {}
-            api_error = 1
-        except Exception as e:
-            log.error(f"Erreur lors de la récupération des données: {e}")
-            occupation = {}
-            api_error = 1
+            self.mock_tick += 1
+            log.info(f"Mise à jour MOCK: {len(rooms)} chambres simulées")
+        else:
+            try:
+                rooms = fetch_rooms()
+                reservations = fetch_reservations()
+                occupation = analyse_occupation(rooms, reservations)
+                api_error = 0
+                
+                log.info(f"Mise à jour: {len(rooms)} chambres, {len(reservations)} réservations")
+            except MewsApiError as e:
+                log.error(f"Echec API MEWS pendant update: {e}")
+                occupation = {}
+                api_error = 1
+            except Exception as e:
+                log.error(f"Erreur lors de la récupération des données: {e}")
+                occupation = {}
+                api_error = 1
         
         # Compteurs globaux
         total_occupied = sum(1 for info in occupation.values() if info["occupied"])
@@ -357,6 +413,10 @@ if __name__ == "__main__":
     print(" Exposition des chambres disponibles via Modbus")
     print("="*60)
     print(" Ctrl+C pour arrêter\n")
+
+    if MOCK_MODE:
+        log.warning("Mode test MOCK active via .env (MOCK_MODE=true)")
+        log.warning(f"Nombre de chambres mock: {max(1, MOCK_ROOM_COUNT)}")
 
     try:
         validate_config()
