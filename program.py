@@ -64,11 +64,9 @@ MOCK_ROOM_COUNT = int(os.getenv("MOCK_ROOM_COUNT", "10"))
 
 MAPPING_FILE = "rooms_mapping.json"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
 log = logging.getLogger("MEWS-ROOMS")
+log.addHandler(logging.NullHandler())
+log.propagate = False
 
 
 class MewsApiError(Exception):
@@ -257,16 +255,16 @@ def generate_mock_rooms(count):
     return rooms
 
 
-def generate_mock_occupation(rooms, tick):
-    """Génère une occupation simulée qui varie à chaque cycle."""
+def generate_mock_occupation(rooms):
+    """Génère une occupation simulée fixe pour les tests."""
     resultats = {}
     for idx, room in enumerate(rooms):
         room_id = room.get("Id")
         room_name = room.get("Name", "N/A")
         room_number = ''.join(filter(str.isdigit, room_name)) or "0"
 
-        # Fait alterner les états pour simuler des changements.
-        occupied = ((idx + tick) % 3) == 0
+        # Pattern fixe: environ 1 chambre sur 3 est occupée.
+        occupied = (idx % 3) == 0
 
         resultats[room_id] = {
             "occupied": occupied,
@@ -286,7 +284,6 @@ class MewsRoomsModbus:
         self.running = False
         self.room_names = {}  # Pour stocker les noms {room_id: name}
         self.mock_mode = MOCK_MODE
-        self.mock_tick = 0
         
         # Chargement initial
         if self.mock_mode:
@@ -314,8 +311,10 @@ class MewsRoomsModbus:
         devices = {}
         for room_id, unit_id in self.room_to_unit.items():
             devices[unit_id] = ModbusDeviceContext(
-                hr=ModbusSequentialDataBlock(0, [0] * 1),
-                ir=ModbusSequentialDataBlock(0, [0] * 1)
+                # 10 registres exposes pour eviter les erreurs d'adressage de certains clients.
+                # 0 = occupation
+                hr=ModbusSequentialDataBlock(0, [0] * 10),
+                ir=ModbusSequentialDataBlock(0, [0] * 10)
             )
             
             status = "ACTIVE" if room_id in self.rooms_actives else "INACTIVE"
@@ -329,11 +328,11 @@ class MewsRoomsModbus:
 
     def update_registers(self):
         """Met à jour les registres Modbus avec les données actuelles"""
+
         if self.mock_mode:
             rooms = generate_mock_rooms(MOCK_ROOM_COUNT)
-            occupation = generate_mock_occupation(rooms, self.mock_tick)
+            occupation = generate_mock_occupation(rooms)
             api_error = 0
-            self.mock_tick += 1
             log.info(f"Mise à jour MOCK: {len(rooms)} chambres simulées")
         else:
             try:
@@ -341,41 +340,29 @@ class MewsRoomsModbus:
                 reservations = fetch_reservations()
                 occupation = analyse_occupation(rooms, reservations)
                 api_error = 0
-                
-                log.info(f"Mise à jour: {len(rooms)} chambres, {len(reservations)} réservations")
-            except MewsApiError as e:
-                log.error(f"Echec API MEWS pendant update: {e}")
-                occupation = {}
-                api_error = 1
             except Exception as e:
-                log.error(f"Erreur lors de la récupération des données: {e}")
+                log.error(f"Erreur API: {e}")
                 occupation = {}
                 api_error = 1
-        
-        # Compteurs globaux
-        total_occupied = sum(1 for info in occupation.values() if info["occupied"])
-        total_available = len(occupation) - total_occupied
 
-        # Mise à jour de chaque Unit ID
+        total_occupied = 0
+
+        # Parcourt les Unit IDs connus via le mapping persistant (compatible toutes versions pymodbus).
         for room_id, unit_id in self.room_to_unit.items():
-            # Récupérer les données d'occupation
-            if room_id in occupation:
-                info = occupation[room_id]
-                occupied = 1 if info["occupied"] else 0
-            else:
-                occupied = 0
-            
-            # Structure des registres:
-            # 0: Occupé (1=occupé, 0=disponible)
-            
-            values = [occupied]
-
-            # Mise à jour HR (3) et IR (4)
             device = self.context[unit_id]
-            device.setValues(3, 0, values)
-            device.setValues(4, 0, values)
 
-        log.info(f"✅ Mise à jour terminée | Occupées: {total_occupied}, Disponibles: {total_available}, Erreur API: {api_error}")
+            occupied = 0
+            if room_id in occupation:
+                occupied = 1 if occupation[room_id].get("occupied", False) else 0
+
+            if occupied:
+                total_occupied += 1
+
+            log.info(f"Unit {unit_id} → value {occupied}")
+            device.setValues(3, 0, [occupied])  # HR
+            device.setValues(4, 0, [occupied])  # IR
+
+        log.info(f"✅ Update OK | Occupied: {total_occupied} | API Error: {api_error}")
 
     def loop(self):
         """Boucle de mise à jour périodique"""
@@ -408,12 +395,6 @@ class MewsRoomsModbus:
 # ============================================================
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print(" MEWS API → MODBUS TCP SERVER")
-    print(" Exposition des chambres disponibles via Modbus")
-    print("="*60)
-    print(" Ctrl+C pour arrêter\n")
-
     if MOCK_MODE:
         log.warning("Mode test MOCK active via .env (MOCK_MODE=true)")
         log.warning(f"Nombre de chambres mock: {max(1, MOCK_ROOM_COUNT)}")

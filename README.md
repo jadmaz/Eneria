@@ -60,7 +60,7 @@ Comportement du mode mock:
 
 - aucune connexion a l'API MEWS
 - generation automatique de chambres fictives
-- changement des valeurs d'occupation a chaque cycle de mise a jour
+- pattern fixe des valeurs d'occupation (ne change pas a chaque cycle)
 - registre Modbus identique: `0` (0 = disponible, 1 = occupee)
 
 Le mapping des Unit IDs est conserve dans `rooms_mapping.json` comme en mode normal.
