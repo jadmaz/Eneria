@@ -55,6 +55,7 @@ if not exist ".env" (
         echo MEWS_BASE_URL=https://api.mews.com/api/connector/v1
         echo MODBUS_PORT=5020
         echo POLLING_INTERVAL=300
+        echo SHOW_UI=true
         echo.
         echo # Test mode - mock data, no MEWS API call
         echo MOCK_MODE=false

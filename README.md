@@ -43,6 +43,7 @@ Parametres optionnels:
 MEWS_BASE_URL=https://api.mews.com/api/connector/v1
 MODBUS_PORT=5020
 POLLING_INTERVAL=300
+SHOW_UI=true
 MOCK_MODE=false
 MOCK_ROOM_COUNT=10
 ```
@@ -67,30 +68,15 @@ Le mapping des Unit IDs est conserve dans `rooms_mapping.json` comme en mode nor
 
 ## Demarrage du serveur
 
-Mode normal (fenetre visible):
+Demarrage recommande (interface incluse):
 
 ```bat
 start.bat
 ```
 
+Au lancement via `start.bat`, l'application ouvre l'interface locale avec le statut des chambres.
 
-### Utiliser start_hidden.vbs
-
-Le fichier `start_hidden.vbs` lance `start_silent.bat` en mode cache (sans fenetre visible).
-
-Utilisation manuelle:
-
-1. Verifier que `setup.bat` a deja ete execute
-2. Double-cliquer sur `start_hidden.vbs`
-
-Utilisation au demarrage Windows:
-
-1. Appuyer sur Win + R
-2. Taper `shell:startup`
-3. Creer un raccourci de `start_hidden.vbs`
-4. Placer ce raccourci dans le dossier ouvert
-
-Au prochain redemarrage, le serveur se lancera automatiquement en arriere-plan.
+La fermeture de la fenetre demande une confirmation car elle arrete aussi le serveur Modbus et les appels API.
 
 ## Configuration du serveur dans CPT Tools
 
@@ -159,3 +145,48 @@ Notes d'adressage selon l'outil:
 3. Interpreter la valeur:
 - 0: disponible
 - 1: occupee
+
+## Lancer le programme au démarrage du PC
+
+Pour que le serveur Modbus se lance automatiquement quand on se connecte au PC:
+
+### 1. Ouvrir le Planificateur de taches
+
+- Appuyer sur `Windows + R`
+- Taper: `taskschd.msc`
+- Valider
+
+### 2. Creer une nouvelle tache
+
+- Dans le menu de droite, cliquer sur "Creer une tache..."
+- Donner un nom: `Eneria-Modbus-Server`
+- Cocher "Executer avec les autorisations les plus elevees"
+
+### 3. Configurer le declencheur
+
+- Aller a l'onglet "Declencheurs"
+- Cliquer sur "Nouveau..."
+- Selectionner "A la connexion"
+- Cliquer sur "OK"
+
+### 4. Configurer l'action
+
+- Aller a l'onglet "Actions"
+- Cliquer sur "Nouveau..."
+- Programme: `cmd.exe`
+- Arguments: `/c "C:\chemin\vers\Eneria\start.bat"` (remplacer par votre chemin reel)
+- Cliquer sur "OK"
+
+### 5. Finaliser
+
+- Cliquer sur "OK" pour creer la tache
+
+### Verification
+
+La tache est maintenant active. Pour verifier:
+
+1. Ouvrir le Planificateur de taches (`Windows + R` > `taskschd.msc`)
+2. Chercher `Eneria-Modbus-Server` dans la liste
+3. Verifier que le statut est `Actif`
+
+Le serveur se lancera automatiquement a la prochaine connexion.
