@@ -146,9 +146,19 @@ Notes d'adressage selon l'outil:
 - 0: disponible
 - 1: occupee
 
-## Lancer le programme au démarrage du PC
+## Demarrage du dashboard sans terminal
 
-Pour que le serveur Modbus se lance automatiquement quand on se connecte au PC:
+Pour lancer le dashboard manuellement sans aucune fenetre de terminal:
+
+```vbs
+start_ui.vbs
+```
+
+Double-cliquer sur ce fichier pour ouvrir **seulement le dashboard** (mode interface utilisateur pur).
+
+## Lancer le dashboard en startup (sans terminal)
+
+Pour que le dashboard se lance automatiquement au démarrage **sans aucune fenetre en arriere-plan**:
 
 ### 1. Ouvrir le Planificateur de taches
 
@@ -159,7 +169,7 @@ Pour que le serveur Modbus se lance automatiquement quand on se connecte au PC:
 ### 2. Creer une nouvelle tache
 
 - Dans le menu de droite, cliquer sur "Creer une tache..."
-- Donner un nom: `Eneria-Modbus-Server`
+- Donner un nom: `Eneria-Dashboard-Startup`
 - Cocher "Executer avec les autorisations les plus elevees"
 
 ### 3. Configurer le declencheur
@@ -169,24 +179,26 @@ Pour que le serveur Modbus se lance automatiquement quand on se connecte au PC:
 - Selectionner "A la connexion"
 - Cliquer sur "OK"
 
-### 4. Configurer l'action
+### 4. Configurer l'action pour le dashboard sans terminal
 
 - Aller a l'onglet "Actions"
 - Cliquer sur "Nouveau..."
-- Programme: `cmd.exe`
-- Arguments: `/c "C:\chemin\vers\Eneria\start.bat"` (remplacer par votre chemin reel)
+- **Programme**: `wscript.exe`
+- **Arguments**: `"C:\chemin\vers\Eneria\start_ui.vbs"` (remplacer par votre chemin reel complet)
 - Cliquer sur "OK"
 
 ### 5. Finaliser
 
 - Cliquer sur "OK" pour creer la tache
 
+Avec cette configuration, **seul le dashboard s'affichera** a la connexion, sans terminal.
+
 ### Verification
 
 La tache est maintenant active. Pour verifier:
 
 1. Ouvrir le Planificateur de taches (`Windows + R` > `taskschd.msc`)
-2. Chercher `Eneria-Modbus-Server` dans la liste
+2. Chercher `Eneria-Dashboard-Startup` dans la liste
 3. Verifier que le statut est `Actif`
 
-Le serveur se lancera automatiquement a la prochaine connexion.
+Le dashboard se lancera automatiquement a la prochaine connexion, completement silencieux.

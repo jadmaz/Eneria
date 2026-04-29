@@ -1,11 +1,12 @@
+import asyncio
 import threading
 import time
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 
-from pymodbus.datastore import ModbusSequentialDataBlock, ModbusServerContext, ModbusDeviceContext
-from pymodbus.server import StartTcpServer
+from pymodbus.server import ModbusTcpServer
+from pymodbus.simulator import DataType, SimData, SimDevice
 
 from app_config import (
     ACCESS_TOKEN,
@@ -34,6 +35,9 @@ class MewsRoomsModbus:
         self.mapping_repo = RoomMappingRepository(MAPPING_FILE)
         self.latest_status = {}
         self.room_names = {}
+        self.sim_devices = []
+        self.server = None
+        self.server_ready = threading.Event()
         self.mock_mode = MOCK_MODE
         rooms = self._load_initial_rooms()
 
@@ -49,7 +53,7 @@ class MewsRoomsModbus:
         log.info(f"Chambres trouvees dans l'API : {len(rooms)}")
         log.info(f"Unit IDs totaux (historique) : {len(self.room_to_unit)}")
 
-        self.context = self._build_modbus_context()
+        self.sim_devices = self._build_modbus_devices()
 
     def _load_initial_rooms(self):
         if self.mock_mode:
@@ -72,19 +76,33 @@ class MewsRoomsModbus:
                 occupied=0,
             )
 
-    def _build_modbus_context(self):
-        devices = {}
+    def _build_modbus_devices(self):
+        devices = []
         for room_id, unit_id in self.room_to_unit.items():
-            devices[unit_id] = ModbusDeviceContext(
-                hr=ModbusSequentialDataBlock(0, [0] * 10),
-                ir=ModbusSequentialDataBlock(0, [0] * 10),
+            devices.append(
+                SimDevice(
+                    unit_id,
+                    simdata=[
+                        SimData(0, values=0, datatype=DataType.REGISTERS),
+                    ],
+                )
             )
 
             status = "ACTIVE" if room_id in self.rooms_actives else "INACTIVE"
             room_name = self.room_names.get(room_id, "Inconnue")
             log.info(f"  Unit ID {unit_id:3d} -> {room_name:20s} [{status}]")
 
-        return ModbusServerContext(devices=devices, single=False)
+        return devices
+
+    def _get_runtime_device(self, unit_id):
+        if self.server is None:
+            return None
+
+        context = getattr(self.server, "context", None)
+        if context is None or not hasattr(context, "devices"):
+            return None
+
+        return context.devices.get(unit_id)
 
     def _fetch_rooms_and_occupation(self):
         if self.mock_mode:
@@ -114,7 +132,6 @@ class MewsRoomsModbus:
         active_room_ids = {room.get("Id") for room in rooms}
 
         for room_id, unit_id in self.room_to_unit.items():
-            device = self.context[unit_id]
             occupied = 0
             if room_id in occupation:
                 occupied = 1 if occupation[room_id].get("occupied", False) else 0
@@ -132,13 +149,21 @@ class MewsRoomsModbus:
                 )
 
             log.info(f"Unit {unit_id} -> value {occupied}")
-            device.setValues(3, 0, [occupied])
-            device.setValues(4, 0, [occupied])
+            runtime_device = self._get_runtime_device(unit_id)
+            if runtime_device is not None:
+                block = runtime_device.block.get("x") or runtime_device.block.get("h") or runtime_device.block.get("i")
+                if block is not None:
+                    block[2][0] = occupied
 
         log.info(f"Update OK | Occupied: {total_occupied} | API Error: {api_error}")
 
+    async def _serve_modbus_server(self):
+        self.server = ModbusTcpServer(self.sim_devices, address=(MODBUS_HOST, MODBUS_PORT))
+        self.server_ready.set()
+        await self.server.serve_forever()
+
     def run_modbus_server(self):
-        StartTcpServer(context=self.context, address=(MODBUS_HOST, MODBUS_PORT))
+        asyncio.run(self._serve_modbus_server())
 
     def run_ui(self):
         root = tk.Tk()
@@ -220,12 +245,17 @@ class MewsRoomsModbus:
 
     def start(self):
         self.running = True
+        threading.Thread(target=self.run_modbus_server, daemon=True).start()
+
+        if not self.server_ready.wait(timeout=5):
+            raise RuntimeError("Le serveur Modbus ne s'est pas initialisé a temps.")
+
         self.update_registers()
         threading.Thread(target=self.loop, daemon=True).start()
 
         if SHOW_UI:
-            threading.Thread(target=self.run_modbus_server, daemon=True).start()
             self.run_ui()
             return
 
-        self.run_modbus_server()
+        while self.running:
+            time.sleep(1)
