@@ -1,27 +1,31 @@
 import sys
-from app_config import MOCK_MODE, MOCK_ROOM_COUNT, log, validate_config
+import os
+from env_loader import load_env_file
+
+load_env_file()
+
+from app_config import validate_config
 from domain import MewsApiError
 from modbus_server import MewsRoomsModbus
+from mews_client import update_rooms_mapping
 
 if __name__ == "__main__":
-    if MOCK_MODE:
-        log.warning("Mode test MOCK active via .env (MOCK_MODE=true)")
-        log.warning(f"Nombre de chambres mock: {max(1, MOCK_ROOM_COUNT)}")
-
     try:
         validate_config()
     except RuntimeError as e:
-        log.error(str(e))
-        log.error("Configurez les variables d'environnement avant de lancer le serveur.")
-        sys.exit(1)
+        sys.exit(str(e))
+
+    try:
+        skip_update = os.getenv("SKIP_MEWS_UPDATE", "false").lower() in ("1", "true", "yes")
+        if not skip_update:
+            update_rooms_mapping()
+    except Exception:
+        pass
 
     try:
         server = MewsRoomsModbus()
         server.start()
     except MewsApiError as e:
-        log.error(f"Connexion MEWS refusée: {e}")
-        log.error("Vérifiez MEWS_CLIENT_TOKEN, MEWS_ACCESS_TOKEN et MEWS_BASE_URL dans .env")
-        sys.exit(1)
+        sys.exit(str(e))
     except RuntimeError as e:
-        log.error(str(e))
-        sys.exit(1)
+        sys.exit(str(e))

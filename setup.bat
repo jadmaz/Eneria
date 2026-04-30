@@ -47,19 +47,16 @@ if not exist ".env" (
     echo Creating .env template...
     > ".env" (
         echo # Eneria / MEWS configuration
-        echo # Fill these two required values before starting the app
+        echo # Fill these required values before starting the app
         echo MEWS_CLIENT_TOKEN=
         echo MEWS_ACCESS_TOKEN=
+        echo MEWS_STAY_SERVICE_ID=6e735f38-c826-416b-88ae-b3ed00a3b060
         echo.
         echo # Optional values
         echo MEWS_BASE_URL=https://api.mews.com/api/connector/v1
         echo MODBUS_PORT=5020
         echo POLLING_INTERVAL=300
         echo SHOW_UI=true
-        echo.
-        echo # Test mode - mock data, no MEWS API call
-        echo MOCK_MODE=false
-        echo MOCK_ROOM_COUNT=10
     )
 ) else (
     echo .env already exists, keeping current values.

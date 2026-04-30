@@ -3,13 +3,10 @@ from datetime import datetime, timedelta, UTC
 
 import requests
 
-from app_config import log
 from domain import MewsApiError
 
 
 class RoomMappingRepository:
-    """Persistent storage for room_id -> unit_id mapping."""
-
     def __init__(self, mapping_file):
         self.mapping_file = mapping_file
 
@@ -25,7 +22,6 @@ class RoomMappingRepository:
         data = {
             "timestamp": datetime.now().isoformat(),
             "mapping": mapping,
-            "description": "Mapping persistant Unit ID <-> Chambre (ne change jamais)",
         }
         with open(self.mapping_file, "w", encoding="utf-8") as file_obj:
             json.dump(data, file_obj, indent=2, ensure_ascii=False)
@@ -33,24 +29,35 @@ class RoomMappingRepository:
     def update(self, rooms):
         mapping = self.load()
         active_rooms = {room["Id"] for room in rooms}
-
+        room_to_unit = {}
         next_unit_id = max(mapping.values()) + 1 if mapping else 1
+        groups = {}
         for room in rooms:
-            room_id = room["Id"]
-            if room_id not in mapping:
-                mapping[room_id] = next_unit_id
-                log.info(
-                    f"Nouvelle chambre : {room.get('Name', 'N/A')} -> Unit ID {next_unit_id}"
-                )
+            room_id = room.get("Id")
+            room_name = room.get("Name", "N/A")
+            data = room.get("Data") or {}
+            value = data.get("Value") or {}
+            floor = value.get("FloorNumber") or "Unknown"
+            base_key = f"{room_name}-{floor}"
+            groups.setdefault(base_key, []).append(room_id)
+
+        for base_key in sorted(groups.keys()):
+            room_id = sorted(groups[base_key])[0]
+            key = base_key
+            if key not in mapping:
+                if next_unit_id >= 255:
+                    break
+                mapping[key] = next_unit_id
                 next_unit_id += 1
+            room_to_unit[room_id] = mapping[key]
+            if next_unit_id >= 255:
+                break
 
         self.save(mapping)
-        return mapping, active_rooms
+        return room_to_unit, active_rooms
 
 
 class MewsApiClient:
-    """Client wrapper around MEWS endpoints."""
-
     def __init__(self, base_url, client_token, access_token, headers):
         self.base_url = base_url
         self.client_token = client_token
@@ -76,25 +83,11 @@ class MewsApiClient:
 
         if response.status_code != 200:
             message = f"Erreur API: {response.status_code} {response.text}"
-            log.error(message)
             raise MewsApiError(response.status_code, message)
 
         return response.json()
 
     def fetch_rooms(self):
-        rooms_data = self.call("resources/getAll", {"Limitation": {"Count": 200}})
+        rooms_data = self.call("resources/getAll", {"Limitation": {"Count": 1000}})
         return rooms_data.get("Resources", [])
 
-    def fetch_reservations(self):
-        now = datetime.now(UTC)
-        start_utc = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        end_utc = (now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        payload = {
-            "StartUtc": start_utc,
-            "EndUtc": end_utc,
-            "Limitation": {"Count": 200},
-        }
-
-        reservations_data = self.call("reservations/getAll", payload)
-        return reservations_data.get("Reservations", [])

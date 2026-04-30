@@ -35,6 +35,7 @@ Apres l'installation, ouvrir le fichier `.env` et renseigner:
 ```env
 MEWS_CLIENT_TOKEN=VOTRE_CLIENT_TOKEN
 MEWS_ACCESS_TOKEN=VOTRE_ACCESS_TOKEN
+MEWS_STAY_SERVICE_ID=ID_SERVICE_HEBERGEMENT
 ```
 
 Parametres optionnels:
@@ -44,27 +45,8 @@ MEWS_BASE_URL=https://api.mews.com/api/connector/v1
 MODBUS_PORT=5020
 POLLING_INTERVAL=300
 SHOW_UI=true
-MOCK_MODE=false
-MOCK_ROOM_COUNT=10
 ```
 
-## Mode test (valeurs mock)
-
-Si vous voulez tester sans API MEWS, activez le mode mock dans `.env`:
-
-```env
-MOCK_MODE=true
-MOCK_ROOM_COUNT=10
-```
-
-Comportement du mode mock:
-
-- aucune connexion a l'API MEWS
-- generation automatique de chambres fictives
-- pattern fixe des valeurs d'occupation (ne change pas a chaque cycle)
-- registre Modbus identique: `0` (0 = disponible, 1 = occupee)
-
-Le mapping des Unit IDs est conserve dans `rooms_mapping.json` comme en mode normal.
 
 ## Demarrage du serveur
 
